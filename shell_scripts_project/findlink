@@ -1,0 +1,9 @@
+#!/bin/bash
+
+
+if [ -z "$1" ]; then
+    echo "Usage: ./findlink <url>"
+    exit 1
+fi
+
+curl -s $1 | grep -E '<a[^>]*>'

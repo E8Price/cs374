@@ -1,0 +1,4 @@
+#!/bin/bash
+
+curl -s $1 --output $2
+
