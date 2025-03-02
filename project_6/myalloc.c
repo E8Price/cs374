@@ -4,17 +4,15 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define HEAP_SIZE 1024   
+#define HEAP_SIZE 1024  
 #define ALIGNMENT 16    
-
 #define PADDED_SIZE(size) (((size) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1))
-
 #define PTR_OFFSET(p, offset) ((void *)((char *)(p) + (offset)))
 
 struct block {
-    int size;
-    int in_use;
-    struct block *next;
+    int size;         
+    int in_use;         
+    struct block *next; 
 };
 
 static struct block *head = NULL;
@@ -26,12 +24,19 @@ void *myalloc(int size) {
     int block_header_size = PADDED_SIZE(sizeof(struct block));
 
     if (head == NULL) {
-        void *heap = mmap(NULL, HEAP_SIZE, PROT_READ | PROT_WRITE,
-                          MAP_ANON | MAP_PRIVATE, -1, 0);
+        void *heap = mmap(
+            NULL, 
+            HEAP_SIZE, 
+            PROT_READ | PROT_WRITE,
+            MAP_ANON | MAP_PRIVATE, 
+            -1, 
+            0
+        );
+
         if (heap == MAP_FAILED) return NULL;
 
         head = (struct block *)heap;
-        head->size = HEAP_SIZE - block_header_size; 
+        head->size = HEAP_SIZE - block_header_size;
         head->in_use = 0;
         head->next = NULL;
     }
@@ -40,11 +45,11 @@ void *myalloc(int size) {
     while (current != NULL) {
         if (!current->in_use && current->size >= actual_size) {
             int remaining_size = current->size - actual_size - block_header_size;
-
-            if (remaining_size >= 16) {
-
-                struct block *new_block = (struct block *)PTR_OFFSET(current, block_header_size + actual_size);
-                new_block->size = remaining_size; 
+            if (remaining_size >= ALIGNMENT) {
+                struct block *new_block = 
+                    (struct block *)PTR_OFFSET(current, block_header_size + actual_size);
+                
+                new_block->size = remaining_size;
                 new_block->in_use = 0;
                 new_block->next = current->next;
 
@@ -71,9 +76,19 @@ void myfree(void *p) {
     while (current != NULL) {
         if (current == target) {
             current->in_use = 0;
-            return;
+            break;
         }
         current = current->next;
+    }
+
+    struct block *b = head;
+    while (b != NULL && b->next != NULL) {
+        if (!b->in_use && !b->next->in_use) {
+            b->size += PADDED_SIZE(sizeof(struct block)) + b->next->size;
+            b->next = b->next->next;
+        } else {
+            b = b->next;
+        }
     }
 }
 
@@ -95,6 +110,7 @@ void print_data(void) {
     }
     printf("\n");
 }
+
 
 int parse_num_arg(char *progname, char *s) {
     char *end;
