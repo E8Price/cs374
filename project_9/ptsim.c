@@ -27,9 +27,7 @@ int get_address(int page, int offset)
 void initialize_mem(void)
 {
     memset(mem, 0, MEM_SIZE);
-
-    int zpfree_addr = get_address(0, 0);
-    mem[zpfree_addr] = 1;  // 1 means "in use"
+    mem[get_address(0, 0)] = 1;  // Zero page is always reserved
 }
 
 //
@@ -70,6 +68,8 @@ void new_process(int proc_num, int page_count)
     int ptp_addr = get_address(0, PTP_OFFSET + proc_num);
     mem[ptp_addr] = (unsigned char)page_table_page;
 
+    printf("Process %d allocated page table at physical page %02x\n", proc_num, page_table_page);
+
     for (int vp = 0; vp < page_count; vp++) {
         int phys_page = find_free_page();
         if (phys_page < 0) {
@@ -79,7 +79,90 @@ void new_process(int proc_num, int page_count)
 
         int page_table_addr = get_address(page_table_page, vp);
         mem[page_table_addr] = (unsigned char)phys_page;
+
+        printf("Process %d: Virtual Page %02x -> Physical Page %02x\n", proc_num, vp, phys_page);
     }
+}
+
+//
+// Free pages allocated to a process and remove its page table
+//
+void kill_process(int proc_num)
+{
+    int page_table_page = get_page_table(proc_num);
+    if (page_table_page == 0) {
+        return;
+    }
+
+    for (int vp = 0; vp < PAGE_COUNT; vp++) {
+        int page_table_addr = get_address(page_table_page, vp);
+        int phys_page = mem[page_table_addr];
+        if (phys_page != 0) {
+            int free_map_addr = get_address(0, phys_page);
+            mem[free_map_addr] = 0; 
+        }
+    }
+
+    int free_map_addr = get_address(0, page_table_page);
+    mem[free_map_addr] = 0;
+
+    int ptp_addr = get_address(0, PTP_OFFSET + proc_num);
+    mem[ptp_addr] = 0;
+}
+
+//
+// Convert a virtual address to a physical address
+//
+int virtual_to_physical(int proc_num, int virtual_address)
+{
+    int page_table_page = get_page_table(proc_num);
+    if (page_table_page == 0) {
+        printf("Error: Process %d has no page table\n", proc_num);
+        return -1;
+    }
+
+    int virtual_page = virtual_address >> PAGE_SHIFT;
+    int offset = virtual_address & 255;
+
+    int page_table_addr = get_address(page_table_page, virtual_page);
+    int physical_page = mem[page_table_addr];
+
+    if (physical_page == 0) {
+        printf("Error: Virtual page %d is not mapped\n", virtual_page);
+        return -1;
+    }
+
+    return (physical_page << PAGE_SHIFT) | offset;
+}
+
+//
+// Store a value at a virtual address
+//
+void store_value(int proc_num, int virtual_address, int value)
+{
+    int physical_address = virtual_to_physical(proc_num, virtual_address);
+    if (physical_address == -1) {
+        printf("Segmentation fault: Invalid memory access\n");
+        return;
+    }
+
+    mem[physical_address] = (unsigned char)value;
+    printf("Store proc %d: %d => %d, value=%d\n", proc_num, virtual_address, physical_address, value);
+}
+
+//
+// Load a value from a virtual address
+//
+void load_value(int proc_num, int virtual_address)
+{
+    int physical_address = virtual_to_physical(proc_num, virtual_address);
+    if (physical_address == -1) {
+        printf("Segmentation fault: Invalid memory access\n");
+        return;
+    }
+
+    int value = mem[physical_address];
+    printf("Load proc %d: %d => %d, value=%d\n", proc_num, virtual_address, physical_address, value);
 }
 
 //
@@ -145,6 +228,21 @@ int main(int argc, char *argv[])
             int proc_num = atoi(argv[++i]);
             int page_count = atoi(argv[++i]);
             new_process(proc_num, page_count);
+        }
+        else if (strcmp(argv[i], "kp") == 0) {
+            int proc_num = atoi(argv[++i]);
+            kill_process(proc_num);
+        }
+        else if (strcmp(argv[i], "sb") == 0) {
+            int proc_num = atoi(argv[++i]);
+            int vaddr = atoi(argv[++i]);
+            int value = atoi(argv[++i]);
+            store_value(proc_num, vaddr, value);
+        }
+        else if (strcmp(argv[i], "lb") == 0) {
+            int proc_num = atoi(argv[++i]);
+            int vaddr = atoi(argv[++i]);
+            load_value(proc_num, vaddr);
         }
         else {
             fprintf(stderr, "Unknown command: %s\n", argv[i]);
